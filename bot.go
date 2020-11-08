@@ -125,3 +125,7 @@ func (b Bot) List(s *discordgo.Session, m *discordgo.MessageCreate, name string)
 		}
 	}
 }
+
+func (b Bot) Ls(s *discordgo.Session, m *discordgo.MessageCreate, name string) {
+	bot.List(s, m, name)
+}
