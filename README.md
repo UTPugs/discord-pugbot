@@ -1,5 +1,5 @@
-# discord-quotebot
-> A quote bot for Discord
+# discord-pugbot
+> A pug bot for Discord
 
 ## Design
 
@@ -15,7 +15,7 @@ In order to add a command, you simply have to add a public method on a `Bot` typ
 
 3. **Run the bot**
 
-`./discord-quotebot -t <bot token>`
+`./discord-pugbot -t <bot token>`
 
 ## Usage
 Commands for this bot follow this structure: `.<command> [argument1] [argument2]`.

@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"math/rand"
+	"strings"
 
 	"github.com/boltdb/bolt"
 	"github.com/bwmarrin/discordgo"
@@ -11,7 +11,9 @@ import (
 
 // Bot holds the bot state.
 type Bot struct {
-	db *bolt.DB
+	db       *bolt.DB
+	channels map[string]Channel
+	games    map[GameIdentifier]Game
 }
 
 // UserQuotes stores quotes of a particular user.
@@ -20,76 +22,106 @@ type UserQuotes struct {
 	Username string
 }
 
+type Channel struct {
+	Mods map[string]Mod
+}
+
+type Mod struct {
+	MaxPlayers int
+}
+
+type GameIdentifier struct {
+	Channel string
+	Mod     string
+}
+
+type Game struct {
+	Players     map[string]bool
+	Red         map[string]bool
+	Blue        map[string]bool
+	RedCaptain  string
+	BlueCaptain string
+}
+
 type selector func([]string) (string, int)
 
-// Saves quote to the database. Returns true if the save was successful.
-func (b Bot) quoteImpl(user string, text string, messageID string) bool {
-	saved := false
-
-	// Check whether particular message was already saved to the database.
-	b.db.Update(func(tx *bolt.Tx) error {
-		bucket, err := tx.CreateBucketIfNotExists([]byte("QuoteSavedBucket"))
-		v := bucket.Get([]byte(messageID))
-		if len(v) > 0 {
-			saved = true
+func (b Bot) Enable(s *discordgo.Session, m *discordgo.MessageCreate) {
+	if _, ok := b.channels[m.ChannelID]; ok {
+		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Pugbot was already enabled"))
+	} else {
+		c := Channel{make(map[string]Mod)}
+		b.db.Update(func(tx *bolt.Tx) error {
+			bucket, err := tx.CreateBucketIfNotExists([]byte("ChannelsBucket"))
+			cSerialized, err := json.Marshal(c)
+			err = bucket.Put([]byte(m.ChannelID), []byte(cSerialized))
 			return err
-		}
-		err = bucket.Put([]byte(messageID), []byte{1})
-		return err
-	})
-
-	if saved {
-		return false
+		})
+		b.channels[m.ChannelID] = c
+		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Pugbot enabled"))
 	}
+}
 
-	// Save the message to the database.
-	b.db.Update(func(tx *bolt.Tx) error {
-		bucket, err := tx.CreateBucketIfNotExists([]byte("QuoteBucket"))
-		v := bucket.Get([]byte(user))
-		var userQuote UserQuotes
-		if len(v) > 0 {
-			json.Unmarshal(v, &userQuote)
+func (b Bot) Addmod(s *discordgo.Session, m *discordgo.MessageCreate, name string, maxPlayers int) {
+	if c, ok := b.channels[m.ChannelID]; ok {
+		if _, ok := c.Mods[name]; ok {
+			s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Mod with this name already exists"))
 		} else {
-			userQuote = UserQuotes{[]string{}, user}
+			mod := Mod{maxPlayers}
+			c.Mods[name] = mod
+			b.db.Update(func(tx *bolt.Tx) error {
+				bucket, err := tx.CreateBucketIfNotExists([]byte("ChannelsBucket"))
+				cSerialized, err := json.Marshal(c)
+				err = bucket.Put([]byte(m.ChannelID), []byte(cSerialized))
+				return err
+			})
 		}
-		userQuote.Quotes = append(userQuote.Quotes, text)
-		userQuoteSerialized, err := json.Marshal(userQuote)
-
-		err = bucket.Put([]byte(user), []byte(userQuoteSerialized))
-		return err
-	})
-	return true
+	} else {
+		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Pugbot was not enabled on this channel"))
+	}
 }
 
-// Views a quote for a given user, using selector of which quote in the array to show.
-func (b Bot) viewQuote(s *discordgo.Session, m *discordgo.MessageCreate, user string, fn selector) {
-	b.db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte("QuoteBucket"))
-		v := bucket.Get([]byte(user))
-		if len(v) > 0 {
-			var userQuote UserQuotes
-			json.Unmarshal(v, &userQuote)
-			if len(userQuote.Quotes) > 0 {
-				q, i := fn(userQuote.Quotes)
-				s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("> #%d: %s", i, q))
+func (b Bot) Join(s *discordgo.Session, m *discordgo.MessageCreate, name string) {
+	if c, ok := b.channels[m.ChannelID]; ok {
+		if mod, ok := c.Mods[name]; ok {
+			g := GameIdentifier{m.ChannelID, name}
+			if _, ok := bot.games[g]; !ok {
+				bot.games[g] = Game{make(map[string]bool), make(map[string]bool), make(map[string]bool), "", ""}
 			}
+			if len(bot.games[g].Players) == mod.MaxPlayers {
+				return
+			}
+			bot.games[g].Players[m.Author.Username] = true
+			// TODO: Add logic to start a game.
 		}
-		return nil
-	})
+	}
 }
 
-// Randomquote views a random quote. 
-func (b Bot) Randomquote(s *discordgo.Session, m *discordgo.MessageCreate, user string) {
-	b.viewQuote(s, m, user, func(quotes []string) (string, int) {
-		i := rand.Intn(len(quotes))
-		return quotes[i], i
-	})
+func (b Bot) Leave(s *discordgo.Session, m *discordgo.MessageCreate, name string) {
+	if c, ok := b.channels[m.ChannelID]; ok {
+		if _, ok := c.Mods[name]; ok {
+			g := GameIdentifier{m.ChannelID, name}
+			if _, ok := bot.games[g]; !ok {
+				return
+			}
+			delete(bot.games[g].Players, m.Author.Username)
+		}
+	}
 }
 
-// Lastquote views a last quote. 
-func (b Bot) Lastquote(s *discordgo.Session, m *discordgo.MessageCreate, user string) {
-	b.viewQuote(s, m, user, func(quotes []string) (string, int) {
-		i := len(quotes)-1
-		return quotes[i], i 
-	})
+func (b Bot) List(s *discordgo.Session, m *discordgo.MessageCreate, name string) {
+	if c, ok := b.channels[m.ChannelID]; ok {
+		if mod, ok := c.Mods[name]; ok {
+			g := GameIdentifier{m.ChannelID, name}
+			if _, ok := bot.games[g]; !ok {
+				return
+			}
+			var msg strings.Builder
+			msg.Grow(32)
+			fmt.Fprintf(&msg, "[%d / %d]\n", len(bot.games[g].Players), mod.MaxPlayers)
+			for player := range bot.games[g].Players {
+				fmt.Fprintf(&msg, "%s | ", player)
+			}
+			s.ChannelMessageSend(m.ChannelID, msg.String())
+		}
+	}
 }

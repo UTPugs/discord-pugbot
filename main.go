@@ -1,12 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"os/signal"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -40,12 +42,38 @@ func main() {
 	defer lf.Close()
 	defer logger.Init("LoggerExample", false, false, lf).Close()
 
-	db, err := bolt.Open("my.db", 0600, nil)
+	db, err := bolt.Open("my.db", 0777, nil)
+	tx, err := db.Begin(true)
+	tx.CreateBucket([]byte("ChannelsBucket"))
+	if err3 := tx.Commit(); err3 != nil {
+		panic(err3)
+	}
+
 	if err != nil {
 		panic(err)
 	}
 	defer db.Close()
-	bot = Bot{db}
+	channels := make(map[string]Channel)
+	games := make(map[GameIdentifier]Game)
+	db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte("ChannelsBucket"))
+		if err != nil {
+			panic(err)
+		}
+		c := bucket.Cursor()
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			var c Channel
+			json.Unmarshal(v, &c)
+			channels[string(k)] = c
+			for name := range c.Mods {
+				g := GameIdentifier{string(k), name}
+				games[g] = Game{make(map[string]bool), make(map[string]bool), make(map[string]bool), "", ""}
+			}
+			fmt.Printf("key=%s, value=%s\n", k, v)
+		}
+		return nil
+	})
+	bot = Bot{db, channels, games}
 
 	// Create a new Discord session using the provided bot token.
 	dg, err := discordgo.New("Bot " + Token)
@@ -56,7 +84,6 @@ func main() {
 
 	// Register the messageCreate func as a callback for MessageCreate events.
 	dg.AddHandler(messageCreate)
-	dg.AddHandler(messageReactionAdd)
 
 	// Open a websocket connection to Discord and begin listening.
 	err = dg.Open()
@@ -97,26 +124,6 @@ func parseArguments(s string) []string {
 	return args[1:]
 }
 
-func messageReactionAdd(s *discordgo.Session, m *discordgo.MessageReactionAdd) {
-	fmt.Println(m.Emoji.Name)
-	message, err := s.ChannelMessage(m.ChannelID, m.MessageID)
-	// Ignore all messages created by the bot itself
-	if err != nil || message.Author.ID == s.State.User.ID {
-		return
-	}
-	if m.Emoji.Name == "❤️" {
-		if err != nil {
-			logger.Fatalf("error loading Discord message,", err)
-			return
-		}
-		saved := bot.quoteImpl(message.Author.Username, message.Content, m.MessageID)
-		if saved {
-			quote := fmt.Sprintf("Saved quote: \n > %s \n > -%s", message.Content, message.Author.Username)
-			s.ChannelMessageSend(m.ChannelID, quote)
-		}
-	}
-}
-
 func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	logger.Info(m.Content)
 	args := parseArguments(m.Content)
@@ -125,8 +132,13 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	inputs[0] = reflect.ValueOf(s)
 	inputs[1] = reflect.ValueOf(m)
 	// Pass any additional arguments based on the message itself.
-	for i, _ := range args {
-		inputs[i+2] = reflect.ValueOf(args[i])
+	for i := range args {
+		val := args[i]
+		if valInt, err := strconv.Atoi(val); err == nil {
+			inputs[i+2] = reflect.ValueOf(valInt)
+		} else {
+			inputs[i+2] = reflect.ValueOf(val)
+		}
 	}
 
 	// Ignore all messages created by the bot itself
