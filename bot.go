@@ -42,7 +42,7 @@ type Game struct {
 	Blue        map[string]bool
 	RedCaptain  string
 	BlueCaptain string
-	mutex       sync.Mutex
+	mutex       *sync.Mutex
 }
 
 type selector func([]string) (string, int)
@@ -87,8 +87,10 @@ func (b *Bot) Join(s *discordgo.Session, m *discordgo.MessageCreate, name string
 		if mod, ok := c.Mods[name]; ok {
 			g := GameIdentifier{m.ChannelID, name}
 			if _, ok := bot.games[g]; !ok {
-				bot.games[g] = Game{Players: make(map[string]bool), Blue: make(map[string]bool), Red: make(map[string]bool)}
+				bot.games[g] = Game{Players: make(map[string]bool), Blue: make(map[string]bool), Red: make(map[string]bool), mutex: new(sync.Mutex)}
 			}
+			bot.games[g].mutex.Lock()
+			defer bot.games[g].mutex.Unlock()
 			if len(bot.games[g].Players) == mod.MaxPlayers {
 				return
 			}
@@ -105,6 +107,8 @@ func (b *Bot) Leave(s *discordgo.Session, m *discordgo.MessageCreate, name strin
 			if _, ok := bot.games[g]; !ok {
 				return
 			}
+			bot.games[g].mutex.Lock()
+			defer bot.games[g].mutex.Unlock()
 			delete(bot.games[g].Players, m.Author.Username)
 		}
 	}
@@ -117,6 +121,8 @@ func (b *Bot) List(s *discordgo.Session, m *discordgo.MessageCreate, name string
 			if _, ok := bot.games[g]; !ok {
 				return
 			}
+			bot.games[g].mutex.Lock()
+			defer bot.games[g].mutex.Unlock()
 			var msg strings.Builder
 			msg.Grow(32)
 			fmt.Fprintf(&msg, "[%d / %d]\n", len(bot.games[g].Players), mod.MaxPlayers)
