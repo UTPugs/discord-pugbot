@@ -45,7 +45,7 @@ type Game struct {
 
 type selector func([]string) (string, int)
 
-func (b Bot) Enable(s *discordgo.Session, m *discordgo.MessageCreate) {
+func (b *Bot) Enable(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if _, ok := b.channels[m.ChannelID]; ok {
 		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Pugbot was already enabled"))
 	} else {
@@ -61,7 +61,7 @@ func (b Bot) Enable(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 }
 
-func (b Bot) Addmod(s *discordgo.Session, m *discordgo.MessageCreate, name string, maxPlayers int) {
+func (b *Bot) Addmod(s *discordgo.Session, m *discordgo.MessageCreate, name string, maxPlayers int) {
 	if c, ok := b.channels[m.ChannelID]; ok {
 		if _, ok := c.Mods[name]; ok {
 			s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Mod with this name already exists"))
@@ -80,7 +80,7 @@ func (b Bot) Addmod(s *discordgo.Session, m *discordgo.MessageCreate, name strin
 	}
 }
 
-func (b Bot) Join(s *discordgo.Session, m *discordgo.MessageCreate, name string) {
+func (b *Bot) Join(s *discordgo.Session, m *discordgo.MessageCreate, name string) {
 	if c, ok := b.channels[m.ChannelID]; ok {
 		if mod, ok := c.Mods[name]; ok {
 			g := GameIdentifier{m.ChannelID, name}
@@ -96,7 +96,7 @@ func (b Bot) Join(s *discordgo.Session, m *discordgo.MessageCreate, name string)
 	}
 }
 
-func (b Bot) Leave(s *discordgo.Session, m *discordgo.MessageCreate, name string) {
+func (b *Bot) Leave(s *discordgo.Session, m *discordgo.MessageCreate, name string) {
 	if c, ok := b.channels[m.ChannelID]; ok {
 		if _, ok := c.Mods[name]; ok {
 			g := GameIdentifier{m.ChannelID, name}
@@ -108,7 +108,7 @@ func (b Bot) Leave(s *discordgo.Session, m *discordgo.MessageCreate, name string
 	}
 }
 
-func (b Bot) List(s *discordgo.Session, m *discordgo.MessageCreate, name string) {
+func (b *Bot) List(s *discordgo.Session, m *discordgo.MessageCreate, name string) {
 	if c, ok := b.channels[m.ChannelID]; ok {
 		if mod, ok := c.Mods[name]; ok {
 			g := GameIdentifier{m.ChannelID, name}
@@ -126,6 +126,6 @@ func (b Bot) List(s *discordgo.Session, m *discordgo.MessageCreate, name string)
 	}
 }
 
-func (b Bot) Ls(s *discordgo.Session, m *discordgo.MessageCreate, name string) {
+func (b *Bot) Ls(s *discordgo.Session, m *discordgo.MessageCreate, name string) {
 	bot.List(s, m, name)
 }

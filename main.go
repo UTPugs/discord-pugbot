@@ -146,7 +146,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if m.Author.ID == s.State.User.ID {
 		return
 	}
-	method := reflect.ValueOf(bot).MethodByName(parseCommand(m.Content))
+	method := reflect.ValueOf(&bot).MethodByName(parseCommand(m.Content))
 	if method.IsValid() && len(inputs) >= method.Type().NumIn() {
 		// Trim all unnecessary arguments.
 		inputs = inputs[:method.Type().NumIn()]
