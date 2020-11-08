@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/boltdb/bolt"
 	"github.com/bwmarrin/discordgo"
@@ -41,6 +42,7 @@ type Game struct {
 	Blue        map[string]bool
 	RedCaptain  string
 	BlueCaptain string
+	mutex       sync.Mutex
 }
 
 type selector func([]string) (string, int)
@@ -85,7 +87,7 @@ func (b *Bot) Join(s *discordgo.Session, m *discordgo.MessageCreate, name string
 		if mod, ok := c.Mods[name]; ok {
 			g := GameIdentifier{m.ChannelID, name}
 			if _, ok := bot.games[g]; !ok {
-				bot.games[g] = Game{make(map[string]bool), make(map[string]bool), make(map[string]bool), "", ""}
+				bot.games[g] = Game{Players: make(map[string]bool), Blue: make(map[string]bool), Red: make(map[string]bool)}
 			}
 			if len(bot.games[g].Players) == mod.MaxPlayers {
 				return

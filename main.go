@@ -67,7 +67,7 @@ func main() {
 			channels[string(k)] = c
 			for name := range c.Mods {
 				g := GameIdentifier{string(k), name}
-				games[g] = Game{make(map[string]bool), make(map[string]bool), make(map[string]bool), "", ""}
+				games[g] = Game{Players: make(map[string]bool), Red: make(map[string]bool), Blue: make(map[string]bool)}
 			}
 			fmt.Printf("key=%s, value=%s\n", k, v)
 		}
