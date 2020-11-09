@@ -115,7 +115,6 @@ func (b *Bot) Joinpm(s *discordgo.Session, m *discordgo.MessageCreate, name stri
 	b.Pm(s, m, name)
 }
 
-
 func (b *Bot) Pm(s *discordgo.Session, m *discordgo.MessageCreate, name string) {
 	if c, ok := b.channels[m.ChannelID]; ok {
 		if _, ok := c.Mods[name]; ok {
