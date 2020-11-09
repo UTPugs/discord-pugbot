@@ -31,30 +31,19 @@ type GameIdentifier struct {
 }
 
 type Game struct {
-	Players     map[Player]bool
+	Players     map[string]PlayerMetadata
 	Red         map[string]bool
 	Blue        map[string]bool
-	RedCaptain  *Player
-	BlueCaptain *Player
+	RedCaptain  string
+	BlueCaptain string
 	mutex       *sync.Mutex
 }
 
-type Player struct {
-	Name         string
+type PlayerMetadata struct {
 	NotifyOnFill bool 
 }
 
 type selector func([]string) (string, int)
-
-func (g Game) PlayerWithName(p string) (*Player) {
-	for player := range g.Players {
-		if player.Name == p {
-			return &player
-		}
-	}
-
-	return nil
-}
 
 func (b *Bot) Enable(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if _, ok := b.channels[m.ChannelID]; ok {
@@ -96,7 +85,7 @@ func (b *Bot) Join(s *discordgo.Session, m *discordgo.MessageCreate, name string
 		if mod, ok := c.Mods[name]; ok {
 			g := GameIdentifier{m.ChannelID, name}
 			if _, ok := b.games[g]; !ok {
-				b.games[g] = Game{Players: make(map[Player]bool), Blue: make(map[string]bool), Red: make(map[string]bool), mutex: new(sync.Mutex)}
+				b.games[g] = Game{Players: make(map[string]PlayerMetadata), Blue: make(map[string]bool), Red: make(map[string]bool), mutex: new(sync.Mutex)}
 			}
 			b.games[g].mutex.Lock()
 			defer b.games[g].mutex.Unlock()
@@ -104,11 +93,10 @@ func (b *Bot) Join(s *discordgo.Session, m *discordgo.MessageCreate, name string
 			if len(b.games[g].Players) == mod.MaxPlayers {
 				return
 			}
-			if b.games[g].PlayerWithName(m.Author.Username) != nil {
-				return
+			if _, ok := b.games[g].Players[m.Author.Username]; !ok {
+				b.games[g].Players[m.Author.Username] = PlayerMetadata {}
 			}
-			player := Player { m.Author.Username, false }
-			b.games[g].Players[player] = true
+
 			// TODO: Add logic to start a game.
 		}
 	}
@@ -136,13 +124,11 @@ func (b *Bot) Pm(s *discordgo.Session, m *discordgo.MessageCreate, name string) 
 				return
 			}
 
-			for player := range b.games[g].Players {
-				if player.Name == m.Author.Username {
-					delete(b.games[g].Players, player)
-					player.NotifyOnFill = true
-					b.games[g].Players[player] = true
+			if metadata, ok := b.games[g].Players[m.Author.Username]; ok {
+				if !metadata.NotifyOnFill {
+					metadata.NotifyOnFill = true
+					b.games[g].Players[m.Author.Username] = metadata
 					s.MessageReactionAdd(m.ChannelID, m.Message.ID, "✅")
-					break
 				}
 			}
 		}
@@ -158,8 +144,9 @@ func (b *Bot) Leave(s *discordgo.Session, m *discordgo.MessageCreate, name strin
 			}
 			b.games[g].mutex.Lock()
 			defer b.games[g].mutex.Unlock()
-			player := * b.games[g].PlayerWithName(m.Author.Username)
-			delete(b.games[g].Players, player)
+			if _, ok := b.games[g].Players[m.Author.Username]; ok {
+				delete(b.games[g].Players, m.Author.Username)
+			}
 		}
 	}
 }
@@ -181,7 +168,7 @@ func (b *Bot) List(s *discordgo.Session, m *discordgo.MessageCreate, name string
 			msg.Grow(32)
 			fmt.Fprintf(&msg, "[%d / %d]\n", len(b.games[g].Players), mod.MaxPlayers)
 			for player := range b.games[g].Players {
-				fmt.Fprintf(&msg, "%s | ", player.Name)
+				fmt.Fprintf(&msg, "%s | ", player)
 			}
 			s.ChannelMessageSend(m.ChannelID, msg.String())
 		}
