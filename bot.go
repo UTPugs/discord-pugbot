@@ -109,8 +109,7 @@ func (b *Bot) Addplayer(s *discordgo.Session, m *discordgo.MessageCreate, name s
 						if *b.games[g].RedCaptain == "" {
 							*b.games[g].RedCaptain = player
 							b.games[g].Red[player] = true
-						}
-						if *b.games[g].BlueCaptain == "" {
+						} else {
 							*b.games[g].BlueCaptain = player
 							b.games[g].Blue[player] = true
 						}
