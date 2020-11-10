@@ -112,7 +112,7 @@ func (b *Bot) Addplayer(s *discordgo.Session, m *discordgo.MessageCreate, name s
 						}
 						if *b.games[g].BlueCaptain == "" {
 							*b.games[g].BlueCaptain = player
-							b.games[g].Red[player] = true
+							b.games[g].Blue[player] = true
 						}
 					}
 					b.teamsSelected(s, m, g)
