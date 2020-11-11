@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"reflect"
@@ -94,11 +96,19 @@ func main() {
 	}
 
 	// Wait here until CTRL-C or other term signal is received.
-	fmt.Println("Bot is now running.  Press CTRL-C to exit.")
+	log.Println("Bot is now running. Press CTRL-C to exit.")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+		log.Printf("defaulting to port %s", port)
+	}
+	if err := http.ListenAndServe(":"+port, nil); err != nil {
+		log.Fatal(err)
+	}
+	http.HandleFunc("/", handler)
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
 	<-sc
-
 	// Cleanly close down the Discord session.
 	dg.Close()
 }
@@ -153,4 +163,12 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		inputs = inputs[:method.Type().NumIn()]
 		method.Call(inputs)
 	}
+}
+
+func handler(w http.ResponseWriter, r *http.Request) {
+	name := os.Getenv("NAME")
+	if name == "" {
+		name = "World"
+	}
+	fmt.Fprintf(w, "Hello %s!\n", name)
 }
