@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"math/rand"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/boltdb/bolt"
 	"github.com/bwmarrin/discordgo"
@@ -43,9 +45,14 @@ type Game struct {
 
 type PlayerMetadata struct {
 	NotifyOnFill bool
+	JoinTime     time.Time
 }
 
-type selector func([]string) (string, int)
+// Used for sorting for display
+type Player struct {
+	Key   string
+	Value PlayerMetadata
+}
 
 func (b *Bot) Enable(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if _, ok := b.channels[m.ChannelID]; ok {
@@ -76,6 +83,7 @@ func (b *Bot) Addmod(s *discordgo.Session, m *discordgo.MessageCreate, name stri
 				err = bucket.Put([]byte(m.ChannelID), []byte(cSerialized))
 				return err
 			})
+			s.MessageReactionAdd(m.ChannelID, m.Message.ID, "✅")
 		}
 	} else {
 		s.ChannelMessageSend(m.ChannelID, "Pugbot was not enabled on this channel")
@@ -93,14 +101,14 @@ func (b *Bot) Addplayer(s *discordgo.Session, m *discordgo.MessageCreate, name s
 			if _, ok := b.games[g]; !ok {
 				b.games[g] = Game{Players: make(map[string]PlayerMetadata), Blue: make(map[string]bool), Red: make(map[string]bool), mutex: new(sync.Mutex), RedCaptain: new(string), BlueCaptain: new(string)}
 			}
-			b.games[g].mutex.Lock()
-			defer b.games[g].mutex.Unlock()
-
 			if len(b.games[g].Players)+len(b.games[g].Red)+len(b.games[g].Blue) == mod.MaxPlayers {
 				return
 			}
+
+			b.games[g].mutex.Lock()
+
 			if _, ok := b.games[g].Players[playerName]; !ok {
-				b.games[g].Players[playerName] = PlayerMetadata{}
+				b.games[g].Players[playerName] = PlayerMetadata{JoinTime: time.Now()}
 			}
 			if len(b.games[g].Players)+len(b.games[g].Red)+len(b.games[g].Blue) == mod.MaxPlayers {
 				s.ChannelMessageSend(m.ChannelID, "Pugbot has filled")
@@ -132,6 +140,10 @@ func (b *Bot) Addplayer(s *discordgo.Session, m *discordgo.MessageCreate, name s
 					}
 					s.ChannelMessageSend(m.ChannelID, msg.String())
 				}
+				b.games[g].mutex.Unlock()
+			} else {
+				b.games[g].mutex.Unlock()
+				b.List(s, m, name)
 			}
 		}
 	}
@@ -237,10 +249,12 @@ func (b *Bot) Leave(s *discordgo.Session, m *discordgo.MessageCreate, name strin
 			if _, ok := b.games[g]; !ok {
 				return
 			}
+
 			b.games[g].mutex.Lock()
-			defer b.games[g].mutex.Unlock()
 			if _, ok := b.games[g].Players[m.Author.Username]; ok {
 				delete(b.games[g].Players, m.Author.Username)
+				b.games[g].mutex.Unlock()
+				b.List(s, m, name)
 			}
 		}
 	}
@@ -257,16 +271,52 @@ func (b *Bot) List(s *discordgo.Session, m *discordgo.MessageCreate, name string
 			if _, ok := b.games[g]; !ok {
 				return
 			}
-			bot.games[g].mutex.Lock()
-			defer bot.games[g].mutex.Unlock()
+			b.games[g].mutex.Lock()
+			defer b.games[g].mutex.Unlock()
+
 			var msg strings.Builder
-			msg.Grow(32)
-			fmt.Fprintf(&msg, "[%d / %d]\n", len(b.games[g].Players), mod.MaxPlayers)
-			for player := range b.games[g].Players {
-				fmt.Fprintf(&msg, "%s | ", player)
+			fmt.Fprintf(&msg, "**%s** [%d / %d]\n", name, len(b.games[g].Players), mod.MaxPlayers)
+
+			var sortedPlayers []Player
+			for key, value := range b.games[g].Players {
+				sortedPlayers = append(sortedPlayers, Player{key, value})
 			}
+
+			sort.Slice(sortedPlayers, func(i, j int) bool {
+				return sortedPlayers[i].Value.JoinTime.Before(sortedPlayers[j].Value.JoinTime)
+			})
+
+			var sortedPlayerNames []string
+			for _, player := range sortedPlayers {
+				sortedPlayerNames = append(sortedPlayerNames, player.Key)
+			}
+
+			playerList := strings.Join(sortedPlayerNames, " | ")
+			fmt.Fprintf(&msg, playerList)
+
 			s.ChannelMessageSend(m.ChannelID, msg.String())
 		}
+	}
+}
+
+func (b *Bot) Lsa(s *discordgo.Session, m *discordgo.MessageCreate) {
+	b.ListAll(s, m)
+}
+
+func (b *Bot) ListAll(s *discordgo.Session, m *discordgo.MessageCreate) {
+	if c, ok := b.channels[m.ChannelID]; ok {
+		var modLists []string
+		for modName, mod := range c.Mods {
+			g := GameIdentifier{m.ChannelID, modName}
+			if _, ok := b.games[g]; !ok {
+				return
+			}
+			modList := fmt.Sprintf("**%s** [%d / %d]", modName, len(b.games[g].Players), mod.MaxPlayers)
+			modLists = append(modLists, modList)
+		}
+
+		output := strings.Join(modLists, " | ")
+		s.ChannelMessageSend(m.ChannelID, output)
 	}
 }
 
