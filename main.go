@@ -72,14 +72,19 @@ func main() {
 				g := GameIdentifier{string(k), name}
 				games[g] = Game{Players: make(map[string]PlayerMetadata), Red: make(map[string]bool), Blue: make(map[string]bool), mutex: new(sync.Mutex), RedCaptain: new(string), BlueCaptain: new(string)}
 			}
-			fmt.Printf("key=%s, value=%s\n", k, v)
+			log.Printf("key=%s, value=%s\n", k, v)
 		}
 		return nil
 	})
 	bot = Bot{db, channels, games}
 
 	// Create a new Discord session using the provided bot token.
-	dg, err := discordgo.New("Bot " + Token)
+	token := os.Getenv("TOKEN")
+	if token == "" {
+		log.Printf("TOKEN: %s", token)
+		token = Token
+	}
+	dg, err := discordgo.New("Bot " + token)
 	if err != nil {
 		logger.Fatalf("error creating Discord session,", err)
 		return
