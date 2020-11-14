@@ -80,6 +80,7 @@ func (b *Bot) Addmod(s *discordgo.Session, m *discordgo.MessageCreate, name stri
 			if err != nil {
 				// Handle any errors in an appropriate way, such as returning them.
 				log.Printf("An error has occurred: %s", err)
+				return
 			}
 			s.MessageReactionAdd(m.ChannelID, m.Message.ID, "✅")
 		}
