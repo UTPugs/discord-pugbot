@@ -1,7 +1,7 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -15,9 +15,10 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/boltdb/bolt"
+	"cloud.google.com/go/firestore"
 	"github.com/bwmarrin/discordgo"
 	"github.com/google/logger"
+	"google.golang.org/api/iterator"
 )
 
 // Variables used for command line parameters
@@ -45,39 +46,6 @@ func main() {
 	defer lf.Close()
 	defer logger.Init("LoggerExample", false, false, lf).Close()
 
-	db, err := bolt.Open("my.db", 0777, nil)
-	tx, err := db.Begin(true)
-	tx.CreateBucket([]byte("ChannelsBucket"))
-	if err3 := tx.Commit(); err3 != nil {
-		panic(err3)
-	}
-
-	if err != nil {
-		panic(err)
-	}
-	defer db.Close()
-	channels := make(map[string]Channel)
-	games := make(map[GameIdentifier]Game)
-	db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte("ChannelsBucket"))
-		if err != nil {
-			panic(err)
-		}
-		c := bucket.Cursor()
-		for k, v := c.First(); k != nil; k, v = c.Next() {
-			var c Channel
-			json.Unmarshal(v, &c)
-			channels[string(k)] = c
-			for name := range c.Mods {
-				g := GameIdentifier{string(k), name}
-				games[g] = Game{Players: make(map[string]PlayerMetadata), Red: make(map[string]bool), Blue: make(map[string]bool), mutex: new(sync.Mutex), RedCaptain: new(string), BlueCaptain: new(string)}
-			}
-			log.Printf("key=%s, value=%s\n", k, v)
-		}
-		return nil
-	})
-	bot = Bot{db, channels, games}
-
 	// Create a new Discord session using the provided bot token.
 	token := os.Getenv("TOKEN")
 	if token == "" {
@@ -89,6 +57,38 @@ func main() {
 		logger.Fatalf("error creating Discord session,", err)
 		return
 	}
+	botname := os.Getenv("BOTNAME")
+	if botname == "" {
+		botname = "discord-pugbot"
+	}
+
+	// Get a Firestore client.
+	ctx := context.Background()
+	client := createClient(ctx, botname)
+	defer client.Close()
+
+	channels := make(map[string]Channel)
+	games := make(map[GameIdentifier]Game)
+
+	iter := client.Collection("channels").Documents(ctx)
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			log.Fatalf("Failed to iterate: %v", err)
+		}
+		var c Channel
+		doc.DataTo(&c)
+		channels[doc.Ref.ID] = c
+		for name := range c.Mods {
+			g := GameIdentifier{doc.Ref.ID, name}
+			games[g] = Game{Players: make(map[string]PlayerMetadata), Red: make(map[string]bool), Blue: make(map[string]bool), mutex: new(sync.Mutex), RedCaptain: new(string), BlueCaptain: new(string)}
+		}
+	}
+
+	bot = Bot{channels, games, client, ctx}
 
 	// Register the messageCreate func as a callback for MessageCreate events.
 	dg.AddHandler(messageCreate)
@@ -176,4 +176,14 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		name = "World"
 	}
 	fmt.Fprintf(w, "Hello %s!\n", name)
+}
+
+func createClient(ctx context.Context, token string) *firestore.Client {
+	client, err := firestore.NewClient(ctx, token)
+	if err != nil {
+		log.Fatalf("Failed to create client: %v", err)
+	}
+	// Close client when done with
+	// defer client.Close()
+	return client
 }

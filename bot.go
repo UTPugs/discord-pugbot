@@ -1,22 +1,24 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
+	"log"
 	"math/rand"
 	"reflect"
 	"strings"
 	"sync"
 
-	"github.com/boltdb/bolt"
+	"cloud.google.com/go/firestore"
 	"github.com/bwmarrin/discordgo"
 )
 
 // Bot holds the bot state.
 type Bot struct {
-	db       *bolt.DB
 	channels map[string]Channel
 	games    map[GameIdentifier]Game
+	client   *firestore.Client
+	ctx      context.Context
 }
 
 type Channel struct {
@@ -52,12 +54,7 @@ func (b *Bot) Enable(s *discordgo.Session, m *discordgo.MessageCreate) {
 		s.ChannelMessageSend(m.ChannelID, "Pugbot was already enabled")
 	} else {
 		c := Channel{make(map[string]Mod)}
-		b.db.Update(func(tx *bolt.Tx) error {
-			bucket, err := tx.CreateBucketIfNotExists([]byte("ChannelsBucket"))
-			cSerialized, err := json.Marshal(c)
-			err = bucket.Put([]byte(m.ChannelID), []byte(cSerialized))
-			return err
-		})
+		b.client.Collection("channels").Doc(m.ChannelID).Set(b.ctx, c)
 		b.channels[m.ChannelID] = c
 		s.ChannelMessageSend(m.ChannelID, "Pugbot enabled")
 	}
@@ -70,12 +67,13 @@ func (b *Bot) Addmod(s *discordgo.Session, m *discordgo.MessageCreate, name stri
 		} else {
 			mod := Mod{maxPlayers}
 			c.Mods[name] = mod
-			b.db.Update(func(tx *bolt.Tx) error {
-				bucket, err := tx.CreateBucketIfNotExists([]byte("ChannelsBucket"))
-				cSerialized, err := json.Marshal(c)
-				err = bucket.Put([]byte(m.ChannelID), []byte(cSerialized))
-				return err
-			})
+			_, err := b.client.Collection("channels").Doc(m.ChannelID).Set(b.ctx, map[string]interface{}{
+				"mods": c.Mods,
+			}, firestore.MergeAll)
+			if err != nil {
+				// Handle any errors in an appropriate way, such as returning them.
+				log.Printf("An error has occurred: %s", err)
+			}
 		}
 	} else {
 		s.ChannelMessageSend(m.ChannelID, "Pugbot was not enabled on this channel")
