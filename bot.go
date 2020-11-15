@@ -278,7 +278,7 @@ func (b *Bot) Leaveall(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 }
 
-func (b *Bot) Lva(s *discordgo.Session, m *discordgo.MessageCreate, name string) {
+func (b *Bot) Lva(s *discordgo.Session, m *discordgo.MessageCreate) {
 	b.Leaveall(s, m)
 }
 
