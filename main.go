@@ -165,6 +165,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	method := reflect.ValueOf(&bot).MethodByName(parseCommand(m.Content))
 	if method.IsValid() && len(inputs) >= method.Type().NumIn() {
 		// Trim all unnecessary arguments.
+		log.Printf("Calling bot method %v", inputs)
 		inputs = inputs[:method.Type().NumIn()]
 		method.Call(inputs)
 	}
