@@ -12,16 +12,19 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+const DefaultTimeout = 5
+
 // Bot holds the bot state.
 type Bot struct {
-	channels map[string]Channel
+	channels map[string]*Channel
 	games    map[GameIdentifier]Game
 	client   *firestore.Client
 	ctx      context.Context
 }
 
 type Channel struct {
-	Mods map[string]Mod
+	Mods    map[string]*Mod
+	Timeout int
 }
 
 type Mod struct {
@@ -54,9 +57,9 @@ func (b *Bot) Enable(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if _, ok := b.channels[m.ChannelID]; ok {
 		s.ChannelMessageSend(m.ChannelID, "Pugbot was already enabled")
 	} else {
-		c := Channel{make(map[string]Mod)}
+		c := Channel{make(map[string]*Mod), DefaultTimeout}
 		b.client.Collection("channels").Doc(m.ChannelID).Set(b.ctx, c)
-		b.channels[m.ChannelID] = c
+		b.channels[m.ChannelID] = &c
 		s.ChannelMessageSend(m.ChannelID, "Pugbot enabled")
 	}
 }
@@ -75,7 +78,7 @@ func (b *Bot) Addmod(s *discordgo.Session, m *discordgo.MessageCreate, name stri
 			log.Println("Invalid player count")
 		} else {
 			mod := Mod{maxPlayers}
-			c.Mods[name] = mod
+			c.Mods[name] = &mod
 			_, err := b.client.Collection("channels").Doc(m.ChannelID).Set(b.ctx, map[string]interface{}{
 				"Mods": c.Mods,
 			}, firestore.MergeAll)
@@ -88,6 +91,31 @@ func (b *Bot) Addmod(s *discordgo.Session, m *discordgo.MessageCreate, name stri
 		}
 	} else {
 		s.ChannelMessageSend(m.ChannelID, "Pugbot is not enabled on this channel")
+	}
+}
+
+func (b *Bot) Settimeout(s *discordgo.Session, m *discordgo.MessageCreate, timeoutInHours int) {
+	if !isAdmin(s, m) {
+		log.Printf("%s tried setting timeout on channel but is not an admin", m.Author.Username)
+		return
+	}
+	if c, ok := b.channels[m.ChannelID]; ok {
+		c.Timeout = timeoutInHours
+		_, err := b.client.Collection("channels").Doc(m.ChannelID).Set(b.ctx, map[string]interface{}{
+			"Timeout": timeoutInHours,
+		}, firestore.MergeAll)
+		if err != nil {
+			// Handle any errors in an appropriate way, such as returning them.
+			log.Printf("An error has occurred: %s", err)
+			return
+		}
+		s.ChannelMessageSend(m.ChannelID, "Timeout set")
+	}
+}
+
+func (b *Bot) Gettimeout(s *discordgo.Session, m *discordgo.MessageCreate) {
+	if c, ok := b.channels[m.ChannelID]; ok {
+		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Timeout is set to %d hours", c.Timeout))
 	}
 }
 
@@ -108,7 +136,7 @@ func (b *Bot) Addplayer(s *discordgo.Session, m *discordgo.MessageCreate, name s
 	}
 
 	if _, ok := b.games[*gameID]; !ok {
-		b.games[*gameID] = Game{Players: make(map[string]PlayerMetadata), Blue: make(map[string]bool), Red: make(map[string]bool), mutex: new(sync.Mutex), RedCaptain: new(string), BlueCaptain: new(string)}
+		b.games[*gameID] = Game{Players: make(map[string]*PlayerMetadata), Blue: make(map[string]bool), Red: make(map[string]bool), mutex: new(sync.Mutex), RedCaptain: new(string), BlueCaptain: new(string)}
 	}
 	game := b.games[*gameID]
 
@@ -347,7 +375,7 @@ func (b *Bot) GameInfo(channelID string, modName string) (*GameIdentifier, *Mod)
 		gameID := GameIdentifier{channelID, modName}
 		if _, ok := b.games[gameID]; ok {
 			mod := channel.Mods[modName]
-			return &gameID, &mod
+			return &gameID, mod
 		}
 	}
 

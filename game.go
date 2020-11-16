@@ -10,7 +10,7 @@ import (
 )
 
 type Game struct {
-	Players     map[string]PlayerMetadata
+	Players     map[string]*PlayerMetadata
 	Red         map[string]bool
 	Blue        map[string]bool
 	RedCaptain  *string
@@ -36,14 +36,14 @@ func (game *Game) HasPlayer(playerName string) bool {
 
 func (game *Game) AddPlayer(playerName string) {
 	if _, ok := game.Players[playerName]; !ok {
-		game.Players[playerName] = PlayerMetadata{JoinTime: time.Now()}
+		game.Players[playerName] = &PlayerMetadata{JoinTime: time.Now()}
 	}
 }
 
 func (game *Game) BuildPlayerList() string {
 	var sortedPlayers []Player
 	for key, value := range game.Players {
-		sortedPlayers = append(sortedPlayers, Player{key, value})
+		sortedPlayers = append(sortedPlayers, Player{key, *value})
 	}
 
 	sort.Slice(sortedPlayers, func(i, j int) bool {
