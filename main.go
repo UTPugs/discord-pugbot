@@ -18,6 +18,7 @@ import (
 	"cloud.google.com/go/firestore"
 	"github.com/bwmarrin/discordgo"
 	"github.com/google/logger"
+	"github.com/jasonlvhit/gocron"
 	"google.golang.org/api/iterator"
 )
 
@@ -87,8 +88,8 @@ func main() {
 			games[g] = Game{Players: make(map[string]*PlayerMetadata), Red: make(map[string]bool), Blue: make(map[string]bool), mutex: new(sync.Mutex), RedCaptain: new(string), BlueCaptain: new(string)}
 		}
 	}
-
-	bot = Bot{channels, games, client, ctx}
+	s := gocron.NewScheduler()
+	bot = Bot{channels, games, client, ctx, s}
 
 	// Register the messageCreate func as a callback for MessageCreate events.
 	dg.AddHandler(messageCreate)
@@ -99,6 +100,8 @@ func main() {
 		logger.Fatalf("error opening connection,", err)
 		return
 	}
+	s.Every(5).Second().Do(bot.cleanupPlayers, dg)
+	s.Start()
 
 	// Wait here until CTRL-C or other term signal is received.
 	log.Println("Bot is now running. Press CTRL-C to exit.")
@@ -169,6 +172,7 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 		inputs = inputs[:method.Type().NumIn()]
 		method.Call(inputs)
 	}
+	bot.keepAlive(m.Author.Username)
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {

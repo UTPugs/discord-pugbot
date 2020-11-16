@@ -10,16 +10,18 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"github.com/bwmarrin/discordgo"
+	"github.com/jasonlvhit/gocron"
 )
 
 const DefaultTimeout = 5
 
 // Bot holds the bot state.
 type Bot struct {
-	channels map[string]*Channel
-	games    map[GameIdentifier]Game
-	client   *firestore.Client
-	ctx      context.Context
+	channels  map[string]*Channel
+	games     map[GameIdentifier]Game
+	client    *firestore.Client
+	ctx       context.Context
+	scheduler *gocron.Scheduler
 }
 
 type Channel struct {
@@ -115,7 +117,7 @@ func (b *Bot) Settimeout(s *discordgo.Session, m *discordgo.MessageCreate, timeo
 
 func (b *Bot) Gettimeout(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if c, ok := b.channels[m.ChannelID]; ok {
-		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Timeout is set to %d hours", c.Timeout))
+		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Timeout is set to %d minutes", c.Timeout))
 	}
 }
 
@@ -393,4 +395,43 @@ func isAdmin(s *discordgo.Session, m *discordgo.MessageCreate) bool {
 		}
 	}
 	return false
+}
+
+func (b *Bot) cleanupPlayers(s *discordgo.Session) {
+	for k, game := range b.games {
+		channel := b.channels[k.Channel]
+		mod := channel.Mods[k.Mod]
+		if game.IsPickingTeams(mod) {
+			continue
+		}
+		game.mutex.Lock()
+		defer game.mutex.Unlock()
+		var playersToDelete []string
+		for name, player := range game.Players {
+			// log.Printf("%s considering", name)
+			if player.JoinTime.Before(time.Now().Add(time.Duration(-channel.Timeout) * time.Minute)) {
+				log.Printf("%s timed out", name)
+				s.ChannelMessageSend(k.Channel, fmt.Sprintf("%s was removed from %s because they timed out", name, k.Mod))
+				playersToDelete = append(playersToDelete, name)
+			}
+		}
+		for _, player := range playersToDelete {
+			delete(game.Players, player)
+		}
+	}
+}
+
+func (b *Bot) keepAlive(name string) {
+	for k, game := range b.games {
+		channel := b.channels[k.Channel]
+		mod := channel.Mods[k.Mod]
+		if game.IsPickingTeams(mod) {
+			continue
+		}
+		for k, player := range game.Players {
+			if k == name {
+				player.JoinTime = time.Now()
+			}
+		}
+	}
 }
