@@ -18,7 +18,7 @@ const DefaultTimeout = 5
 // Bot holds the bot state.
 type Bot struct {
 	channels  map[string]*Channel
-	games     map[GameIdentifier]Game
+	games     map[GameIdentifier]*Game
 	client    *firestore.Client
 	ctx       context.Context
 	scheduler *gocron.Scheduler
@@ -41,6 +41,7 @@ type GameIdentifier struct {
 type PlayerMetadata struct {
 	NotifyOnFill bool
 	JoinTime     time.Time
+	PickOrder    int
 }
 
 // Used for sorting for display
@@ -138,7 +139,7 @@ func (b *Bot) Addplayer(s *discordgo.Session, m *discordgo.MessageCreate, name s
 	}
 
 	if _, ok := b.games[*gameID]; !ok {
-		b.games[*gameID] = Game{Players: make(map[string]*PlayerMetadata), Blue: make(map[string]bool), Red: make(map[string]bool), mutex: new(sync.Mutex), RedCaptain: new(string), BlueCaptain: new(string)}
+		b.games[*gameID] = &Game{Players: make(map[string]*PlayerMetadata), Blue: make(map[string]bool), Red: make(map[string]bool), mutex: new(sync.Mutex), RedCaptain: new(string), BlueCaptain: new(string)}
 	}
 	game := b.games[*gameID]
 
@@ -150,31 +151,8 @@ func (b *Bot) Addplayer(s *discordgo.Session, m *discordgo.MessageCreate, name s
 	game.AddPlayer(playerName)
 
 	if game.IsFull(mod) {
-		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("%s has filled", name))
-		if mod.MaxPlayers == 2 {
-			for player := range game.Players {
-				if *game.RedCaptain == "" {
-					*game.RedCaptain = player
-					game.Red[player] = true
-				} else {
-					*game.BlueCaptain = player
-					game.Blue[player] = true
-				}
-			}
-			b.teamsSelected(s, m, *gameID)
-		} else {
-			players := game.Players
-			*game.RedCaptain = game.RandPlayer()
-			game.Red[*game.RedCaptain] = true
-			delete(players, *game.RedCaptain)
-			*game.BlueCaptain = game.RandPlayer()
-			game.Blue[*game.BlueCaptain] = true
-			delete(players, *game.BlueCaptain)
-			s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("%s is captain for red team, %s is captain for blue team", *game.RedCaptain, *game.BlueCaptain))
-			s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("%s to pick", *game.RedCaptain))
-			s.ChannelMessageSend(m.ChannelID, game.BuildPlayerList())
-		}
 		game.mutex.Unlock()
+		game.BeginPicks(s, m.ChannelID, name, mod)
 	} else {
 		game.mutex.Unlock()
 		b.List(s, m, name)
@@ -286,7 +264,7 @@ func (b *Bot) L(s *discordgo.Session, m *discordgo.MessageCreate, name string) {
 
 func (b *Bot) Leaveall(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if c, ok := b.channels[m.ChannelID]; ok {
-		for name, _ := range c.Mods {
+		for name := range c.Mods {
 			g := GameIdentifier{m.ChannelID, name}
 			if _, ok := b.games[g]; !ok {
 				return
@@ -350,6 +328,21 @@ func (b *Bot) ListAll(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 func (b *Bot) Ls(s *discordgo.Session, m *discordgo.MessageCreate, name string) {
 	b.List(s, m, name)
+}
+
+func (b *Bot) Captain(s *discordgo.Session, m *discordgo.MessageCreate) {
+	if c, ok := b.channels[m.ChannelID]; ok {
+		for modName, mod := range c.Mods {
+			g := GameIdentifier{m.ChannelID, modName}
+			if game, ok := b.games[g]; ok {
+				if game.HasPlayer(m.Author.Username) && game.IsFull(&mod) && !game.IsPickingTeams(&mod) {
+					log.Printf(fmt.Sprintf("Setting captain to %s for %p", m.Author.Username, game))
+					s.ChannelMessageSend(m.ChannelID, game.SetNextCaptainIfPossible(m.Author.Username))
+					return
+				}
+			}
+		}
+	}
 }
 
 // Internal
