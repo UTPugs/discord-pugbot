@@ -335,7 +335,7 @@ func (b *Bot) Captain(s *discordgo.Session, m *discordgo.MessageCreate) {
 		for modName, mod := range c.Mods {
 			g := GameIdentifier{m.ChannelID, modName}
 			if game, ok := b.games[g]; ok {
-				if game.HasPlayer(m.Author.Username) && game.IsFull(&mod) && !game.IsPickingTeams(&mod) {
+				if game.HasPlayer(m.Author.Username) && game.IsFull(mod) && !game.IsPickingTeams(mod) {
 					log.Printf(fmt.Sprintf("Setting captain to %s for %p", m.Author.Username, game))
 					s.ChannelMessageSend(m.ChannelID, game.SetNextCaptainIfPossible(m.Author.Username))
 					return
