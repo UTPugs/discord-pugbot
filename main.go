@@ -144,6 +144,11 @@ func parseArguments(s string) []string {
 
 func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	logger.Info(m.Content)
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println("Recovered in messageCreate", r)
+		}
+	}()
 	args := parseArguments(m.Content)
 	// Pass the original session and message arguments.
 	inputs := make([]reflect.Value, len(args)+2)
