@@ -139,3 +139,8 @@ func (game *Game) SetNextCaptainIfPossible(userName string) string {
 
 	return ""
 }
+
+func (game *Game) PickColor() TeamColor {
+	pickedCount := len(game.Red) + len(game.Blue)
+	return pickedCount > 0 && ((pickedCount-1)/2)%2 == 1
+}

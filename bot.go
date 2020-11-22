@@ -50,6 +50,13 @@ type Player struct {
 	Value PlayerMetadata
 }
 
+type TeamColor bool
+
+const (
+	Red  TeamColor = false
+	Blue           = true
+)
+
 // Bot commands
 
 func (b *Bot) Enable(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -180,16 +187,12 @@ func (b *Bot) Pick(s *discordgo.Session, m *discordgo.MessageCreate, modName str
 	}
 
 	// 0 is red, 1 is blue
-	pickColor := 0
-	pickedCount := len(game.Red) + len(game.Blue)
-	if pickedCount > 0 && ((pickedCount-1)/2)%2 == 1 {
-		pickColor = 1
-	}
-	if pickColor == 0 && (*game.RedCaptain == m.Message.Author.Username || m.Message.Author.Username == "hyperreal") {
+	pickColor := game.PickColor()
+	if pickColor == Red && (*game.RedCaptain == m.Message.Author.Username || m.Message.Author.Username == "hyperreal") {
 		game.Red[playerName] = true
 		delete(game.Players, playerName)
 	}
-	if pickColor == 1 && (*game.BlueCaptain == m.Message.Author.Username || m.Message.Author.Username == "hyperreal") {
+	if pickColor == Blue && (*game.BlueCaptain == m.Message.Author.Username || m.Message.Author.Username == "hyperreal") {
 		game.Blue[playerName] = true
 		delete(game.Players, playerName)
 	}
@@ -200,6 +203,14 @@ func (b *Bot) Pick(s *discordgo.Session, m *discordgo.MessageCreate, modName str
 			game.Blue[playerName] = true
 		}
 		b.teamsSelected(s, m, *gameID)
+	} else {
+		nextPickColor := game.PickColor()
+		toPick := *game.BlueCaptain
+		if nextPickColor == Red {
+			toPick = *game.RedCaptain
+		}
+		b.List(s, m, modName)
+		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("%s to pick", toPick))
 	}
 }
 
