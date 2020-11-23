@@ -115,8 +115,6 @@ func (game *Game) AutoPickRemainingCaptains(s *discordgo.Session, channelID stri
 }
 
 func (game *Game) SetCaptain(captain string, teamCaptain **string, team *map[string]bool) {
-	game.mutex.Lock()
-	defer game.mutex.Unlock()
 	delete(game.Players, captain)
 	*teamCaptain = &captain
 	(*team)[captain] = true

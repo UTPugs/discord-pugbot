@@ -155,13 +155,12 @@ func (b *Bot) Addplayer(s *discordgo.Session, m *discordgo.MessageCreate, name s
 	}
 
 	game.mutex.Lock()
+	defer game.mutex.Unlock()
 	game.AddPlayer(playerName)
 
 	if game.IsFull(mod) {
-		game.mutex.Unlock()
 		game.BeginPicks(s, m.ChannelID, name, mod)
 	} else {
-		game.mutex.Unlock()
 		b.List(s, m, name)
 	}
 }
@@ -261,10 +260,10 @@ func (b *Bot) Leave(s *discordgo.Session, m *discordgo.MessageCreate, name strin
 	}
 
 	game := b.games[*gameID]
-	game.mutex.Lock()
 	if _, ok := game.Players[m.Author.Username]; ok {
+		game.mutex.Lock()
+		defer game.mutex.Unlock()
 		delete(game.Players, m.Author.Username)
-		game.mutex.Unlock()
 		b.List(s, m, name)
 	}
 }
@@ -282,9 +281,9 @@ func (b *Bot) Leaveall(s *discordgo.Session, m *discordgo.MessageCreate) {
 			}
 
 			b.games[g].mutex.Lock()
+			defer b.games[g].mutex.Unlock()
 			if _, ok := b.games[g].Players[m.Author.Username]; ok {
 				delete(b.games[g].Players, m.Author.Username)
-				b.games[g].mutex.Unlock()
 				b.List(s, m, name)
 			}
 		}
@@ -306,8 +305,6 @@ func (b *Bot) List(s *discordgo.Session, m *discordgo.MessageCreate, name string
 	}
 
 	game := b.games[*gameID]
-	game.mutex.Lock()
-	defer game.mutex.Unlock()
 
 	var msg strings.Builder
 	fmt.Fprintf(&msg, "**%s** [%d / %d]\n", name, len(game.Players), mod.MaxPlayers)
