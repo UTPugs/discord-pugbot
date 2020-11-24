@@ -227,6 +227,45 @@ func (b *Bot) Teams(s *discordgo.Session, m *discordgo.MessageCreate, name strin
 	}
 }
 
+func (b *Bot) P(s *discordgo.Session, m *discordgo.MessageCreate, playerIDs ...int) {
+	b.Pick(s, m, playerIDs...)
+}
+
+func (b *Bot) Pick(s *discordgo.Session, m *discordgo.MessageCreate, playerIDs ...int) {
+	if c, ok := b.channels[m.ChannelID]; ok {
+		count := 0
+		var pickingModName string
+		var game *Game
+		for modName := range c.Mods {
+			gameID, mod := b.GameInfo(m.ChannelID, modName)
+			if _, ok := b.games[*gameID]; !ok {
+				continue
+			}
+			if !b.games[*gameID].IsPickingTeams(mod) {
+				continue
+			}
+
+			game = b.games[*gameID]
+			pickingModName = modName
+			count++
+		}
+		if count == 1 {
+			var playerNames []string
+			for _, playerID := range playerIDs {
+				playerName := game.NameByPickOrder(playerID)
+				log.Printf(playerName)
+				if playerName == "" {
+					return
+				}
+				playerNames = append(playerNames, playerName)
+			}
+			b.Pickname(s, m, pickingModName, playerNames...)
+		} else if count > 1 {
+			s.ChannelMessageSend(m.ChannelID, "More than one game running in parallel, picking use .pickname <mod> <player name>")
+		}
+	}
+}
+
 func (b *Bot) Pn(s *discordgo.Session, m *discordgo.MessageCreate, playerNames ...string) {
 	if c, ok := b.channels[m.ChannelID]; ok {
 		count := 0
@@ -423,7 +462,7 @@ func (b *Bot) ListAll(s *discordgo.Session, m *discordgo.MessageCreate) {
 			modLists = append(modLists, modList)
 		}
 
-		output := strings.Join(modLists, " | ")
+		output := strings.Join(modLists, " :small_orange_diamond: ")
 		s.ChannelMessageSend(m.ChannelID, output)
 	}
 }
@@ -475,14 +514,14 @@ func (b *Bot) teams(s *discordgo.Session, m *discordgo.MessageCreate, g GameIden
 	msg.Grow(32)
 	fmt.Fprintf(&msg, "Red: ")
 	for player := range b.games[g].Red {
-		fmt.Fprintf(&msg, "%s | ", player)
+		fmt.Fprintf(&msg, "%s :small_orange_diamond: ", player)
 	}
 	s.ChannelMessageSend(m.ChannelID, msg.String())
 	msg.Reset()
 	msg.Grow(32)
 	fmt.Fprintf(&msg, "Blue: ")
 	for player := range b.games[g].Blue {
-		fmt.Fprintf(&msg, "%s | ", player)
+		fmt.Fprintf(&msg, "%s :small_orange_diamond: ", player)
 	}
 	s.ChannelMessageSend(m.ChannelID, msg.String())
 }
