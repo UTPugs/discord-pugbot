@@ -89,6 +89,8 @@ func (b *Bot) Addmod(s *discordgo.Session, m *discordgo.MessageCreate, name stri
 		} else {
 			mod := Mod{maxPlayers}
 			c.Mods[name] = &mod
+			g := GameIdentifier{m.ChannelID, name}
+			b.games[g] = &Game{Players: make(map[string]*PlayerMetadata), Red: make(map[string]bool), Blue: make(map[string]bool), mutex: new(sync.Mutex), RedCaptain: new(string), BlueCaptain: new(string)}
 			_, err := b.client.Collection("channels").Doc(m.ChannelID).Set(b.ctx, map[string]interface{}{
 				"Mods": c.Mods,
 			}, firestore.MergeAll)
@@ -172,12 +174,12 @@ func (b *Bot) P(s *discordgo.Session, m *discordgo.MessageCreate, playerName str
 		for modName := range c.Mods {
 			gameID, mod := b.GameInfo(m.ChannelID, modName)
 			if _, ok := b.games[*gameID]; !ok {
-				return
+				continue
 			}
 			game := b.games[*gameID]
 
 			if !game.IsPickingTeams(mod) {
-				return
+				continue
 			}
 			pickingModName = modName
 			count++
@@ -221,10 +223,12 @@ func (b *Bot) Pick(s *discordgo.Session, m *discordgo.MessageCreate, modName str
 		delete(game.Players, playerName)
 	}
 	if len(game.Players) == 1 {
+		lastPlayer := getAnyPlayer(game.Players)
+		delete(game.Players, lastPlayer)
 		if len(game.Red) < len(game.Blue) {
-			game.Red[playerName] = true
+			game.Red[lastPlayer] = true
 		} else {
-			game.Blue[playerName] = true
+			game.Blue[lastPlayer] = true
 		}
 		b.teamsSelected(s, m, *gameID)
 	} else {
@@ -378,6 +382,21 @@ func (b *Bot) Captain(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 }
 
+func (b *Bot) Forcerandomcaptains(s *discordgo.Session, m *discordgo.MessageCreate, name string) {
+	if !isAdmin(s, m) {
+		log.Printf("%s tried forcing random captains but is not an admin", m.Author.Username)
+		return
+	}
+	g := GameIdentifier{m.ChannelID, name}
+	if game, ok := b.games[g]; ok {
+		game.AutoPickRemainingCaptains(s, m.ChannelID)
+	}
+}
+
+func (b *Bot) Frc(s *discordgo.Session, m *discordgo.MessageCreate, name string) {
+	b.Forcerandomcaptains(s, m, name)
+}
+
 // Internal
 
 func (b *Bot) teamsSelected(s *discordgo.Session, m *discordgo.MessageCreate, g GameIdentifier) {
@@ -396,6 +415,7 @@ func (b *Bot) teamsSelected(s *discordgo.Session, m *discordgo.MessageCreate, g 
 		fmt.Fprintf(&msg, "%s | ", player)
 	}
 	s.ChannelMessageSend(m.ChannelID, msg.String())
+	b.games[g] = &Game{Players: make(map[string]*PlayerMetadata), Red: make(map[string]bool), Blue: make(map[string]bool), mutex: new(sync.Mutex), RedCaptain: new(string), BlueCaptain: new(string)}
 }
 
 func (b *Bot) GameInfo(channelID string, modName string) (*GameIdentifier, *Mod) {
@@ -460,4 +480,11 @@ func (b *Bot) keepAlive(name string) {
 			}
 		}
 	}
+}
+
+func getAnyPlayer(m map[string]*PlayerMetadata) string {
+	for k := range m {
+		return k
+	}
+	return ""
 }
