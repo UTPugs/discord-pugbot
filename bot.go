@@ -165,6 +165,31 @@ func (b *Bot) Addplayer(s *discordgo.Session, m *discordgo.MessageCreate, name s
 	}
 }
 
+func (b *Bot) P(s *discordgo.Session, m *discordgo.MessageCreate, playerName string) {
+	if c, ok := b.channels[m.ChannelID]; ok {
+		count := 0
+		var pickingModName string
+		for modName := range c.Mods {
+			gameID, mod := b.GameInfo(m.ChannelID, modName)
+			if _, ok := b.games[*gameID]; !ok {
+				return
+			}
+			game := b.games[*gameID]
+
+			if !game.IsPickingTeams(mod) {
+				return
+			}
+			pickingModName = modName
+			count++
+		}
+		if count == 1 {
+			b.Pick(s, m, pickingModName, playerName)
+		} else if count > 1 {
+			s.ChannelMessageSend(m.ChannelID, "More than one game running in parallel, picking use .pick <mod> <player>")
+		}
+	}
+}
+
 func (b *Bot) Pick(s *discordgo.Session, m *discordgo.MessageCreate, modName string, playerName string) {
 	gameID, mod := b.GameInfo(m.ChannelID, modName)
 	if gameID == nil || mod == nil {
