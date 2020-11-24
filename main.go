@@ -173,7 +173,9 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 	if method.IsValid() && len(inputs) >= method.Type().NumIn() {
 		// Trim all unnecessary arguments.
 		log.Printf("Calling bot method %v", inputs)
-		inputs = inputs[:method.Type().NumIn()]
+		if !method.Type().IsVariadic() {
+			inputs = inputs[:method.Type().NumIn()]
+		}
 		method.Call(inputs)
 	}
 	bot.keepAlive(m.Author.Username)

@@ -57,10 +57,14 @@ func (game *Game) BuildPlayerList() string {
 
 	var sortedPlayerNames []string
 	for _, player := range sortedPlayers {
-		sortedPlayerNames = append(sortedPlayerNames, player.Key)
+		message := player.Key
+		if player.Value.PickOrder != 0 {
+			message = fmt.Sprintf("**%d)** %s", player.Value.PickOrder, player.Key)
+		}
+		sortedPlayerNames = append(sortedPlayerNames, message)
 	}
 
-	return strings.Join(sortedPlayerNames, " | ")
+	return strings.Join(sortedPlayerNames, " :small_orange_diamond: ")
 }
 
 func (game *Game) RandPlayer() string {
@@ -88,15 +92,16 @@ func (game *Game) BeginPicks(s *discordgo.Session, channelID string, modName str
 			if !game.IsFull(mod) {
 				s.ChannelMessageEdit(channelID, message.ID, fmt.Sprintf("**%s** has filled.\n~~Captains will be selected in `%d seconds`~~", modName, seconds))
 				countdownTicker.Stop()
-			} else if game.IsPickingTeams(mod) || seconds <= 0 {
+			} else if seconds <= 0 && !game.IsPickingTeams(mod) {
 				messageText := fmt.Sprintf("**%s** has filled.\nCaptains have been selected", modName)
 				s.ChannelMessageEdit(channelID, message.ID, messageText)
 				countdownTicker.Stop()
 				game.AutoPickRemainingCaptains(s, channelID)
-				s.ChannelMessageSend(channelID, game.BuildPlayerList())
 			} else if game.IsFull(mod) && seconds > 0 && (seconds%5 == 0 || seconds < 5) {
 				messageText := fmt.Sprintf("**%s** has filled.\nCaptains will be selected in `%d seconds`", modName, seconds)
 				s.ChannelMessageEdit(channelID, message.ID, messageText)
+			} else if game.IsPickingTeams(mod) {
+				countdownTicker.Stop()
 			}
 		}
 	}()
@@ -113,6 +118,8 @@ func (game *Game) AutoPickRemainingCaptains(s *discordgo.Session, channelID stri
 	message = append(message, fmt.Sprintf("%s to pick", *game.RedCaptain))
 
 	s.ChannelMessageSend(channelID, strings.Join(message, "\n"))
+	game.establishPickOrder()
+	s.ChannelMessageSend(channelID, game.BuildPlayerList())
 }
 
 func (game *Game) SetCaptain(captain string, teamCaptain **string, team *map[string]bool) {
@@ -142,4 +149,23 @@ func (game *Game) SetNextCaptainIfPossible(userName string) string {
 func (game *Game) PickColor() TeamColor {
 	pickedCount := len(game.Red) + len(game.Blue)
 	return pickedCount > 0 && ((pickedCount-1)/2)%2 == 1
+}
+
+func (game *Game) NameByPickOrder(i int) string {
+	for name, player := range game.Players {
+		if player.PickOrder == i {
+			return name
+		}
+	}
+	return ""
+}
+
+// internal
+
+func (game *Game) establishPickOrder() {
+	i := 1
+	for _, player := range game.Players {
+		player.PickOrder = i
+		i++
+	}
 }

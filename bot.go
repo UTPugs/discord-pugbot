@@ -156,14 +156,14 @@ func (b *Bot) Join(s *discordgo.Session, m *discordgo.MessageCreate, name string
 	b.Addplayer(s, m, name, m.Author.Username)
 }
 
-func (b *Bot) Addplayer(s *discordgo.Session, m *discordgo.MessageCreate, name string, playerName string) {
+func (b *Bot) Addplayer(s *discordgo.Session, m *discordgo.MessageCreate, name string, playerNames ...string) {
 	gameID, mod := b.GameInfo(m.ChannelID, name)
 	if gameID == nil || mod == nil {
 		return
 	}
-	if m.Author.Username != playerName {
+	if m.Author.Username != playerNames[0] {
 		if !isAdmin(s, m) {
-			log.Printf("%s tried adding player %s but is not an admin", m.Author.Username, playerName)
+			log.Printf("%s tried adding player %s but is not an admin", m.Author.Username, playerNames[0])
 			return
 		}
 	}
@@ -173,13 +173,14 @@ func (b *Bot) Addplayer(s *discordgo.Session, m *discordgo.MessageCreate, name s
 	}
 	game := b.games[*gameID]
 
-	if game.IsFull(mod) {
-		return
-	}
-
 	game.mutex.Lock()
 	defer game.mutex.Unlock()
-	game.AddPlayer(playerName)
+	for _, playerName := range playerNames {
+		if game.IsFull(mod) {
+			continue
+		}
+		game.AddPlayer(playerName)
+	}
 
 	if game.IsFull(mod) {
 		game.BeginPicks(s, m.ChannelID, name, mod)
@@ -213,7 +214,20 @@ func (b *Bot) Reset(s *discordgo.Session, m *discordgo.MessageCreate, name strin
 	}
 }
 
-func (b *Bot) P(s *discordgo.Session, m *discordgo.MessageCreate, playerName string) {
+func (b *Bot) Teams(s *discordgo.Session, m *discordgo.MessageCreate, name string) {
+	gameID, mod := b.GameInfo(m.ChannelID, name)
+	if gameID == nil || mod == nil {
+		return
+	}
+	if game, ok := b.games[*gameID]; ok {
+		if !game.IsPickingTeams(mod) {
+			return
+		}
+		b.teams(s, m, *gameID)
+	}
+}
+
+func (b *Bot) Pn(s *discordgo.Session, m *discordgo.MessageCreate, playerNames ...string) {
 	if c, ok := b.channels[m.ChannelID]; ok {
 		count := 0
 		var pickingModName string
@@ -231,16 +245,16 @@ func (b *Bot) P(s *discordgo.Session, m *discordgo.MessageCreate, playerName str
 			count++
 		}
 		if count == 1 {
-			b.Pick(s, m, pickingModName, playerName)
+			b.Pickname(s, m, pickingModName, playerNames...)
 		} else if count > 1 {
 			s.ChannelMessageSend(m.ChannelID, "More than one game running in parallel, picking use .pick <mod> <player>")
 		}
 	}
 }
 
-func (b *Bot) Pick(s *discordgo.Session, m *discordgo.MessageCreate, modName string, playerName string) {
+func (b *Bot) Pickname(s *discordgo.Session, m *discordgo.MessageCreate, modName string, playerNames ...string) {
 	gameID, mod := b.GameInfo(m.ChannelID, modName)
-	if gameID == nil || mod == nil {
+	if gameID == nil || mod == nil || len(playerNames) > 2 {
 		return
 	}
 
@@ -254,19 +268,23 @@ func (b *Bot) Pick(s *discordgo.Session, m *discordgo.MessageCreate, modName str
 		return
 	}
 
-	if !game.HasPlayer(playerName) {
-		return
+	for _, playerName := range playerNames {
+		if !game.HasPlayer(playerName) {
+			return
+		}
 	}
 
 	// 0 is red, 1 is blue
-	pickColor := game.PickColor()
-	if pickColor == Red && (*game.RedCaptain == m.Message.Author.Username || m.Message.Author.Username == "hyperreal") {
-		game.Red[playerName] = true
-		delete(game.Players, playerName)
-	}
-	if pickColor == Blue && (*game.BlueCaptain == m.Message.Author.Username || m.Message.Author.Username == "hyperreal") {
-		game.Blue[playerName] = true
-		delete(game.Players, playerName)
+	for _, playerName := range playerNames {
+		pickColor := game.PickColor()
+		if pickColor == Red && (*game.RedCaptain == m.Message.Author.Username || m.Message.Author.Username == "hyperreal") {
+			game.Red[playerName] = true
+			delete(game.Players, playerName)
+		}
+		if pickColor == Blue && (*game.BlueCaptain == m.Message.Author.Username || m.Message.Author.Username == "hyperreal") {
+			game.Blue[playerName] = true
+			delete(game.Players, playerName)
+		}
 	}
 	if len(game.Players) == 1 {
 		lastPlayer := getAnyPlayer(game.Players)
@@ -284,6 +302,7 @@ func (b *Bot) Pick(s *discordgo.Session, m *discordgo.MessageCreate, modName str
 			toPick = *game.RedCaptain
 		}
 		b.List(s, m, modName)
+		b.teams(s, m, *gameID)
 		s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("%s to pick", toPick))
 	}
 }
@@ -447,6 +466,11 @@ func (b *Bot) Frc(s *discordgo.Session, m *discordgo.MessageCreate, name string)
 
 func (b *Bot) teamsSelected(s *discordgo.Session, m *discordgo.MessageCreate, g GameIdentifier) {
 	s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Teams for %s were selected:", g.Mod))
+	b.teams(s, m, g)
+	b.games[g] = &Game{Players: make(map[string]*PlayerMetadata), Red: make(map[string]bool), Blue: make(map[string]bool), mutex: new(sync.Mutex), RedCaptain: new(string), BlueCaptain: new(string)}
+}
+
+func (b *Bot) teams(s *discordgo.Session, m *discordgo.MessageCreate, g GameIdentifier) {
 	var msg strings.Builder
 	msg.Grow(32)
 	fmt.Fprintf(&msg, "Red: ")
@@ -461,7 +485,6 @@ func (b *Bot) teamsSelected(s *discordgo.Session, m *discordgo.MessageCreate, g 
 		fmt.Fprintf(&msg, "%s | ", player)
 	}
 	s.ChannelMessageSend(m.ChannelID, msg.String())
-	b.games[g] = &Game{Players: make(map[string]*PlayerMetadata), Red: make(map[string]bool), Blue: make(map[string]bool), mutex: new(sync.Mutex), RedCaptain: new(string), BlueCaptain: new(string)}
 }
 
 func (b *Bot) GameInfo(channelID string, modName string) (*GameIdentifier, *Mod) {
