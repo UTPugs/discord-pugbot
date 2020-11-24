@@ -167,6 +167,29 @@ func (b *Bot) Addplayer(s *discordgo.Session, m *discordgo.MessageCreate, name s
 	}
 }
 
+func (b *Bot) Reset(s *discordgo.Session, m *discordgo.MessageCreate, name string) {
+	if !isAdmin(s, m) {
+		log.Printf("%s tried resetting but is not an admin", m.Author.Username)
+		return
+	}
+	gameID, mod := b.GameInfo(m.ChannelID, name)
+	if gameID == nil || mod == nil {
+		return
+	}
+	if game, ok := b.games[*gameID]; ok {
+		s.ChannelMessageSend(m.ChannelID, "Reset!")
+		game.AddPlayer(*game.RedCaptain)
+		game.AddPlayer(*game.BlueCaptain)
+		game.RedCaptain = new(string)
+		game.BlueCaptain = new(string)
+		if game.IsFull(mod) {
+			game.BeginPicks(s, m.ChannelID, name, mod)
+		} else {
+			b.List(s, m, name)
+		}
+	}
+}
+
 func (b *Bot) P(s *discordgo.Session, m *discordgo.MessageCreate, playerName string) {
 	if c, ok := b.channels[m.ChannelID]; ok {
 		count := 0
