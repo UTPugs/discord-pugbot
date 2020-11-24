@@ -93,6 +93,7 @@ func (game *Game) BeginPicks(s *discordgo.Session, channelID string, modName str
 				s.ChannelMessageEdit(channelID, message.ID, messageText)
 				countdownTicker.Stop()
 				game.AutoPickRemainingCaptains(s, channelID)
+				s.ChannelMessageSend(channelID, game.BuildPlayerList())
 			} else if game.IsFull(mod) && seconds > 0 && (seconds%5 == 0 || seconds < 5) {
 				messageText := fmt.Sprintf("**%s** has filled.\nCaptains will be selected in `%d seconds`", modName, seconds)
 				s.ChannelMessageEdit(channelID, message.ID, messageText)
