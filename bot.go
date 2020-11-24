@@ -180,6 +180,8 @@ func (b *Bot) Reset(s *discordgo.Session, m *discordgo.MessageCreate, name strin
 		s.ChannelMessageSend(m.ChannelID, "Reset!")
 		game.AddPlayer(*game.RedCaptain)
 		game.AddPlayer(*game.BlueCaptain)
+		game.Red = make(map[string]bool)
+		game.Blue = make(map[string]bool)
 		game.RedCaptain = new(string)
 		game.BlueCaptain = new(string)
 		if game.IsFull(mod) {
