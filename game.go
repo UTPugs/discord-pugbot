@@ -41,20 +41,12 @@ func (game *Game) HasPlayer(playerName string) bool {
 func (game *Game) AddPlayer(playerName string) {
 	if _, ok := game.Players[playerName]; !ok {
 		log.Printf(fmt.Sprintf("Adding player %s to %p", playerName, game))
-		game.Players[playerName] = &PlayerMetadata{JoinTime: time.Now()}
+		game.Players[playerName] = &PlayerMetadata{JoinTime: time.Now(), LastSeenTime: time.Now()}
 	}
 }
 
 func (game *Game) BuildPlayerList() string {
-	var sortedPlayers []Player
-	for key, value := range game.Players {
-		sortedPlayers = append(sortedPlayers, Player{key, *value})
-	}
-
-	sort.Slice(sortedPlayers, func(i, j int) bool {
-		return sortedPlayers[i].Value.JoinTime.Before(sortedPlayers[j].Value.JoinTime)
-	})
-
+	sortedPlayers := game.PlayersSortedByJoinTime()
 	var sortedPlayerNames []string
 	for _, player := range sortedPlayers {
 		message := player.Key
@@ -65,6 +57,19 @@ func (game *Game) BuildPlayerList() string {
 	}
 
 	return strings.Join(sortedPlayerNames, " :small_orange_diamond: ")
+}
+
+func (game *Game) PlayersSortedByJoinTime() []Player {
+	var sortedPlayers []Player
+	for key, value := range game.Players {
+		sortedPlayers = append(sortedPlayers, Player{key, value})
+	}
+
+	sort.Slice(sortedPlayers, func(i, j int) bool {
+		return sortedPlayers[i].Value.JoinTime.Before(sortedPlayers[j].Value.JoinTime)
+	})
+
+	return sortedPlayers
 }
 
 func (game *Game) RandPlayer() string {
@@ -164,8 +169,8 @@ func (game *Game) NameByPickOrder(i int) string {
 
 func (game *Game) establishPickOrder() {
 	i := 1
-	for _, player := range game.Players {
-		player.PickOrder = i
+	for _, player := range game.PlayersSortedByJoinTime() {
+		player.Value.PickOrder = i
 		i++
 	}
 }

@@ -41,13 +41,14 @@ type GameIdentifier struct {
 type PlayerMetadata struct {
 	NotifyOnFill bool
 	JoinTime     time.Time
+	LastSeenTime time.Time
 	PickOrder    int
 }
 
 // Used for sorting for display
 type Player struct {
 	Key   string
-	Value PlayerMetadata
+	Value *PlayerMetadata
 }
 
 type TeamColor bool
@@ -562,8 +563,7 @@ func (b *Bot) cleanupPlayers(s *discordgo.Session) {
 		defer game.mutex.Unlock()
 		var playersToDelete []string
 		for name, player := range game.Players {
-			// log.Printf("%s considering", name)
-			if player.JoinTime.Before(time.Now().Add(time.Duration(-channel.Timeout) * time.Minute)) {
+			if player.LastSeenTime.Before(time.Now().Add(time.Duration(-channel.Timeout) * time.Minute)) {
 				log.Printf("%s timed out", name)
 				s.ChannelMessageSend(k.Channel, fmt.Sprintf("%s was removed from %s because they timed out", name, k.Mod))
 				playersToDelete = append(playersToDelete, name)
@@ -584,7 +584,7 @@ func (b *Bot) keepAlive(name string) {
 		}
 		for k, player := range game.Players {
 			if k == name {
-				player.JoinTime = time.Now()
+				player.LastSeenTime = time.Now()
 			}
 		}
 	}
