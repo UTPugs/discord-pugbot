@@ -74,6 +74,27 @@ func (b *Bot) Enable(s *discordgo.Session, m *discordgo.MessageCreate) {
 	}
 }
 
+func (b *Bot) Disable(s *discordgo.Session, m *discordgo.MessageCreate) {
+	if !isAdmin(s, m) {
+		log.Printf("%s tried enabling bot on channel but is not an admin", m.Author.Username)
+		return
+	}
+	if _, ok := b.channels[m.ChannelID]; ok {
+		delete(b.channels, m.ChannelID)
+		s.ChannelMessageSend(m.ChannelID, "Pugbot disabled")
+		b.client.Collection("channels").Doc(m.ChannelID).Delete(b.ctx)
+		var gamesToDelete []GameIdentifier
+		for game := range b.games {
+			if game.Channel == m.ChannelID {
+				gamesToDelete = append(gamesToDelete, game)
+			}
+		}
+		for _, game := range gamesToDelete {
+			delete(b.games, game)
+		}
+	}
+}
+
 func (b *Bot) Addmod(s *discordgo.Session, m *discordgo.MessageCreate, name string, maxPlayers int) {
 	if !isAdmin(s, m) {
 		log.Printf("%s tried adding mod on channel but is not an admin", m.Author.Username)
