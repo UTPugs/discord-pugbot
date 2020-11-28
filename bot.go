@@ -39,15 +39,17 @@ type GameIdentifier struct {
 }
 
 type PlayerMetadata struct {
-	NotifyOnFill bool
-	JoinTime     time.Time
-	PickOrder    int
+	NotifyOnFill  bool
+	JoinTime      time.Time
+	LastSeenTime  time.Time
+	PickingNumber int
+	PickedOrder   int
 }
 
 // Used for sorting for display
 type Player struct {
 	Key   string
-	Value PlayerMetadata
+	Value *PlayerMetadata
 }
 
 type TeamColor bool
@@ -111,7 +113,7 @@ func (b *Bot) Addmod(s *discordgo.Session, m *discordgo.MessageCreate, name stri
 			mod := Mod{maxPlayers}
 			c.Mods[name] = &mod
 			g := GameIdentifier{m.ChannelID, name}
-			b.games[g] = &Game{Players: make(map[string]*PlayerMetadata), Red: make(map[string]bool), Blue: make(map[string]bool), mutex: new(sync.Mutex), RedCaptain: new(string), BlueCaptain: new(string)}
+			b.games[g] = &Game{Players: make(map[string]*PlayerMetadata), Red: make(map[string]*PlayerMetadata), Blue: make(map[string]*PlayerMetadata), mutex: new(sync.Mutex), RedCaptain: new(string), BlueCaptain: new(string)}
 			_, err := b.client.Collection("channels").Doc(m.ChannelID).Set(b.ctx, map[string]interface{}{
 				"Mods": c.Mods,
 			}, firestore.MergeAll)
@@ -169,7 +171,7 @@ func (b *Bot) Addplayer(s *discordgo.Session, m *discordgo.MessageCreate, name s
 	}
 
 	if _, ok := b.games[*gameID]; !ok {
-		b.games[*gameID] = &Game{Players: make(map[string]*PlayerMetadata), Blue: make(map[string]bool), Red: make(map[string]bool), mutex: new(sync.Mutex), RedCaptain: new(string), BlueCaptain: new(string)}
+		b.games[*gameID] = &Game{Players: make(map[string]*PlayerMetadata), Blue: make(map[string]*PlayerMetadata), Red: make(map[string]*PlayerMetadata), mutex: new(sync.Mutex), RedCaptain: new(string), BlueCaptain: new(string)}
 	}
 	game := b.games[*gameID]
 
@@ -202,8 +204,8 @@ func (b *Bot) Reset(s *discordgo.Session, m *discordgo.MessageCreate, name strin
 		s.ChannelMessageSend(m.ChannelID, "Reset!")
 		game.AddPlayer(*game.RedCaptain)
 		game.AddPlayer(*game.BlueCaptain)
-		game.Red = make(map[string]bool)
-		game.Blue = make(map[string]bool)
+		game.Red = make(map[string]*PlayerMetadata)
+		game.Blue = make(map[string]*PlayerMetadata)
 		game.RedCaptain = new(string)
 		game.BlueCaptain = new(string)
 		if game.IsFull(mod) {
@@ -252,7 +254,7 @@ func (b *Bot) Pick(s *discordgo.Session, m *discordgo.MessageCreate, playerIDs .
 		if count == 1 {
 			var playerNames []string
 			for _, playerID := range playerIDs {
-				playerName := game.NameByPickOrder(playerID)
+				playerName := game.NameByPickingNumber(playerID)
 				log.Printf(playerName)
 				if playerName == "" {
 					return
@@ -315,23 +317,26 @@ func (b *Bot) Pickname(s *discordgo.Session, m *discordgo.MessageCreate, modName
 
 	// 0 is red, 1 is blue
 	for _, playerName := range playerNames {
+		playerMetadata := game.Players[playerName]
 		pickColor := game.PickColor()
-		if pickColor == Red && (*game.RedCaptain == m.Message.Author.Username || m.Message.Author.Username == "hyperreal") {
-			game.Red[playerName] = true
+		playerMetadata.PickedOrder = game.PickedPlayerCount()
+		if pickColor == Red && (*game.RedCaptain == m.Message.Author.Username || m.Message.Author.Username == "hyperreal" || m.Message.Author.Username == "dc") {
+			game.Red[playerName] = playerMetadata
 			delete(game.Players, playerName)
 		}
-		if pickColor == Blue && (*game.BlueCaptain == m.Message.Author.Username || m.Message.Author.Username == "hyperreal") {
-			game.Blue[playerName] = true
+		if pickColor == Blue && (*game.BlueCaptain == m.Message.Author.Username || m.Message.Author.Username == "hyperreal" || m.Message.Author.Username == "dc") {
+			game.Blue[playerName] = playerMetadata
 			delete(game.Players, playerName)
 		}
 	}
 	if len(game.Players) == 1 {
-		lastPlayer := getAnyPlayer(game.Players)
-		delete(game.Players, lastPlayer)
+		lastPlayerName, lastPlayerMetadata := getAnyPlayer(game.Players)
+		delete(game.Players, lastPlayerName)
+		lastPlayerMetadata.PickedOrder = game.PickedPlayerCount()
 		if len(game.Red) < len(game.Blue) {
-			game.Red[lastPlayer] = true
+			game.Red[lastPlayerName] = lastPlayerMetadata
 		} else {
-			game.Blue[lastPlayer] = true
+			game.Blue[lastPlayerName] = lastPlayerMetadata
 		}
 		b.teamsSelected(s, m, *gameID)
 	} else {
@@ -477,8 +482,9 @@ func (b *Bot) Captain(s *discordgo.Session, m *discordgo.MessageCreate) {
 			g := GameIdentifier{m.ChannelID, modName}
 			if game, ok := b.games[g]; ok {
 				if game.HasPlayer(m.Author.Username) && game.IsFull(mod) && !game.IsPickingTeams(mod) {
+					playerMetadata := game.Players[m.Author.Username]
 					log.Printf(fmt.Sprintf("Setting captain to %s for %p", m.Author.Username, game))
-					s.ChannelMessageSend(m.ChannelID, game.SetNextCaptainIfPossible(m.Author.Username))
+					s.ChannelMessageSend(m.ChannelID, game.SetNextCaptainIfPossible(m.Author.Username, playerMetadata))
 					return
 				}
 			}
@@ -504,26 +510,19 @@ func (b *Bot) Frc(s *discordgo.Session, m *discordgo.MessageCreate, name string)
 // Internal
 
 func (b *Bot) teamsSelected(s *discordgo.Session, m *discordgo.MessageCreate, g GameIdentifier) {
-	s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("Teams for %s were selected:", g.Mod))
-	b.teams(s, m, g)
-	b.games[g] = &Game{Players: make(map[string]*PlayerMetadata), Red: make(map[string]bool), Blue: make(map[string]bool), mutex: new(sync.Mutex), RedCaptain: new(string), BlueCaptain: new(string)}
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("Teams for **%s** were selected:\n", g.Mod))
+	builder.WriteString(b.games[g].Teams())
+	s.ChannelMessageSend(m.ChannelID, builder.String())
+	b.games[g] = &Game{Players: make(map[string]*PlayerMetadata), Red: make(map[string]*PlayerMetadata), Blue: make(map[string]*PlayerMetadata), mutex: new(sync.Mutex), RedCaptain: new(string), BlueCaptain: new(string)}
 }
 
 func (b *Bot) teams(s *discordgo.Session, m *discordgo.MessageCreate, g GameIdentifier) {
-	var msg strings.Builder
-	msg.Grow(32)
-	fmt.Fprintf(&msg, "Red: ")
-	for player := range b.games[g].Red {
-		fmt.Fprintf(&msg, "%s :small_orange_diamond: ", player)
+	if game, ok := b.games[g]; ok {
+		teams := game.Teams()
+		s.ChannelMessageSend(m.ChannelID, teams)
 	}
-	s.ChannelMessageSend(m.ChannelID, msg.String())
-	msg.Reset()
-	msg.Grow(32)
-	fmt.Fprintf(&msg, "Blue: ")
-	for player := range b.games[g].Blue {
-		fmt.Fprintf(&msg, "%s :small_orange_diamond: ", player)
-	}
-	s.ChannelMessageSend(m.ChannelID, msg.String())
+	// TODO: Print teams of last game if picking isn't in progress
 }
 
 func (b *Bot) GameInfo(channelID string, modName string) (*GameIdentifier, *Mod) {
@@ -562,8 +561,7 @@ func (b *Bot) cleanupPlayers(s *discordgo.Session) {
 		defer game.mutex.Unlock()
 		var playersToDelete []string
 		for name, player := range game.Players {
-			// log.Printf("%s considering", name)
-			if player.JoinTime.Before(time.Now().Add(time.Duration(-channel.Timeout) * time.Minute)) {
+			if player.LastSeenTime.Before(time.Now().Add(time.Duration(-channel.Timeout) * time.Minute)) {
 				log.Printf("%s timed out", name)
 				s.ChannelMessageSend(k.Channel, fmt.Sprintf("%s was removed from %s because they timed out", name, k.Mod))
 				playersToDelete = append(playersToDelete, name)
@@ -584,15 +582,15 @@ func (b *Bot) keepAlive(name string) {
 		}
 		for k, player := range game.Players {
 			if k == name {
-				player.JoinTime = time.Now()
+				player.LastSeenTime = time.Now()
 			}
 		}
 	}
 }
 
-func getAnyPlayer(m map[string]*PlayerMetadata) string {
-	for k := range m {
-		return k
+func getAnyPlayer(m map[string]*PlayerMetadata) (string, *PlayerMetadata) {
+	for k, v := range m {
+		return k, v
 	}
-	return ""
+	return "", nil
 }

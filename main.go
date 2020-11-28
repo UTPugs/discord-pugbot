@@ -90,7 +90,7 @@ func main() {
 		channels[doc.Ref.ID] = &c
 		for name := range c.Mods {
 			g := GameIdentifier{doc.Ref.ID, name}
-			games[g] = &Game{Players: make(map[string]*PlayerMetadata), Red: make(map[string]bool), Blue: make(map[string]bool), mutex: new(sync.Mutex), RedCaptain: new(string), BlueCaptain: new(string)}
+			games[g] = &Game{Players: make(map[string]*PlayerMetadata), Red: make(map[string]*PlayerMetadata), Blue: make(map[string]*PlayerMetadata), mutex: new(sync.Mutex), RedCaptain: new(string), BlueCaptain: new(string)}
 		}
 	}
 	s := gocron.NewScheduler()
