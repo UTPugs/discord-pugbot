@@ -13,16 +13,34 @@ In order to add a command, you simply have to add a public method on a `Bot` typ
 
 `go get` & `go build`
 
-3. **Run the bot**
+3. **Install google cloud SDK**
 
-`./discord-pugbot -t <bot token>`
+https://cloud.google.com/sdk/docs/install
+
+4. **Start local firestore instance**
+
+Run:
+
+`gcloud beta emulators firestore start --host-port=localhost`
+
+You will see something like:
+
+`[firestore] API endpoint: http://localhost:8080`
+
+This is your local firestore endpoint.
+
+5. **Run the bot**
+
+`./discord-pugbot -t <bot token> -l <firestore endpoint>`
+
+Use firestore endpoint from the step above.
 
 ## Usage
 Commands for this bot follow this structure: `.<command> [argument1] [argument2]`.
 
 | Command | Description
 |---------|-------------|
-| `.randomquote user` | Shows random quote for particular user. |
-| `.lastquote user` | Shows last quote for particular user. |
-
-To add a quote, you simply have to react with ❤️ to any of their messages.
+| `.lsa` | Shows all active mods and added players. |
+| `.ls [mod]` | Shows players who joined particular mod. |
+| `.join [mod]` | Joins a particular mod. |
+| `.j [mod]` | Joins a particular mod. |
