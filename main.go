@@ -25,21 +25,27 @@ import (
 // Variables used for command line parameters
 var (
 	Token string
+	Local string
 	bot   Bot
 )
 
 const logPath = "bot.log"
+const FirestoreEmulatorHost = "FIRESTORE_EMULATOR_HOST"
 
 var verbose = flag.Bool("verbose", false, "print info level logs to stdout")
 
 func init() {
 
 	flag.StringVar(&Token, "t", "", "Bot Token")
+	flag.StringVar(&Local, "l", "", "Local firebase host")
 	flag.Parse()
 }
 
 func main() {
 	lf, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0660)
+	if Local != "" {
+		os.Setenv(FirestoreEmulatorHost, Local)
+	}
 	if err != nil {
 		logger.Fatalf("Failed to open log file: %v", err)
 	}
