@@ -131,7 +131,7 @@ func main() {
 func parseCommand(s string) string {
 	com := strings.Split(strings.TrimLeft(s, "."), " ")
 	if len(com) > 0 {
-		return strings.Title(com[0])
+		return strings.Title(strings.ToLower(com[0]))
 	}
 	return ""
 }
